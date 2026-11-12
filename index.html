@@ -3,164 +3,363 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PDF 自動合併工具 (Sara 專用)</title>
+<title>PDF 合併工具 (Sara 專用)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root {
-    --bg:#f3f5f7; --panel:#ffffff; --ink:#1d2733; --muted:#66727f; --line:#d6dce2;
-    --accent:#0b5cad; --accent-ink:#ffffff; --ok:#177245; --err:#b3261e; --warn:#b3261e; --thumb:#e9edf1;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#14181d; --panel:#1c2229; --ink:#e6eaee; --muted:#93a0ad; --line:#2f3841; --accent:#4c9be8; --accent-ink:#0b1219; --ok:#5fcf93; --err:#ff8a80; --warn:#ff8a80; --thumb:#252d35; }
+    color-scheme: dark;
+    --bg:#0a0a0c; --stage:#0d0d10; --panel:#131316; --ink:#ececf0; --muted:#8b8d98; --line:#26262d; --line2:#1c1c22;
+    --accent:#7c93ff; --accent-ink:#0a0a0c; --accent-soft:#1a1d33; --accent-line:#363d6e;
+    --ok:#4cd39a; --err:#ff7b72; --warn:#ff7b72; --thumb:#1b1b21;
+    --sh1:0 1px 2px rgba(0,0,0,.6); --sh2:0 8px 24px rgba(0,0,0,.6); --sh3:0 16px 48px rgba(0,0,0,.75);
+    --r:10px;
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
-  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; line-height:1.5; font-size:14px; }
-  .app { display:grid; grid-template-columns:360px 1fr; gap:16px; height:100vh; padding:16px; }
-  @media (max-width:860px) { .app { grid-template-columns:1fr; height:auto; } .right { min-height:70vh; } }
-  .left, .right { background:var(--panel); border:1px solid var(--line); border-radius:10px; display:flex; flex-direction:column; min-height:0; }
-  .left { padding:16px; overflow:auto; }
-  .right { overflow:hidden; }
-  h1 { font-size:20px; margin:0 0 2px; }
-  .sub { color:var(--muted); margin:0 0 14px; font-size:13px; }
-  #drop { border:2px dashed var(--line); border-radius:10px; padding:22px 12px; text-align:center; cursor:pointer; transition:border-color .15s; }
-  #drop.over, #drop:focus-visible { border-color:var(--accent); outline:none; }
-  #drop strong { display:block; font-size:15px; margin-bottom:2px; }
-  #drop span { color:var(--muted); font-size:12px; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Segoe UI","Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif; line-height:1.5; font-size:14px; -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; }
+  svg.i { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+
+  /* ===== 按鈕 ===== */
+  button { font:inherit; font-size:13px; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:6px; height:34px; padding:0 13px; border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:8px; cursor:pointer; box-shadow:var(--sh1); white-space:nowrap; transition:background .15s,border-color .15s,box-shadow .15s,transform .05s; }
+  button:hover:not(:disabled) { background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent); }
+  button:active:not(:disabled) { transform:translateY(1px); }
+  button:disabled { opacity:.42; cursor:not-allowed; box-shadow:none; }
+  button:focus-visible, .drop:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; box-shadow:0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
+  button.primary:hover:not(:disabled) { background:color-mix(in srgb, var(--accent) 88%, #000); color:var(--accent-ink); border-color:transparent; }
+  button.danger:hover:not(:disabled) { background:color-mix(in srgb, var(--err) 12%, transparent); border-color:color-mix(in srgb, var(--err) 40%, transparent); color:var(--err); }
+  button.ghost { border-color:transparent; background:transparent; box-shadow:none; color:var(--muted); height:30px; padding:0 9px; }
+  button.ghost:hover:not(:disabled) { background:var(--accent-soft); color:var(--accent); }
+  button.ghost.danger:hover:not(:disabled) { background:color-mix(in srgb, var(--err) 12%, transparent); color:var(--err); }
+  button.ib { width:26px; height:26px; padding:0; border-radius:6px; border-color:transparent; background:transparent; box-shadow:none; color:var(--muted); }
+  button.ib:hover:not(:disabled) { background:var(--accent-soft); color:var(--accent); }
+  button.ib.x:hover:not(:disabled) { background:color-mix(in srgb, var(--err) 12%, transparent); color:var(--err); }
+  /* 按鈕內嵌進度填色 */
+  button.pbtn { position:relative; isolation:isolate; overflow:hidden; }
+  button.pbtn::before { content:""; position:absolute; inset:0; width:var(--p,0%); z-index:-1; background:color-mix(in srgb, var(--accent) 22%, transparent); transition:width .45s cubic-bezier(.22,.8,.3,1); }
+  button.pbtn.primary::before { background:rgba(255,255,255,.3); }
+  button.pbtn.working:disabled { opacity:1; cursor:progress; }
+  button.pbtn.done { border-color:var(--ok); }
+  button.pbtn.done::before { background:color-mix(in srgb, var(--ok) 28%, transparent); }
+  button.pbtn.primary.done { background:var(--ok); border-color:var(--ok); color:#fff; }
+
+  /* ===== 頂部列 ===== */
+  .top { height:60px; flex:none; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:16px; padding:0 20px; background:var(--panel); border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:11px; min-width:0; }
+  .logo { width:34px; height:34px; border-radius:9px; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,var(--accent),color-mix(in srgb, var(--accent) 55%, #9b5cff)); box-shadow:0 3px 10px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .logo svg.i { width:19px; height:19px; }
+  .brand b { display:block; font-size:15px; font-weight:700; letter-spacing:.2px; line-height:1.2; }
+  .brand small { color:var(--muted); font-size:12px; }
+  .steps { list-style:none; margin:0; padding:0; display:flex; align-items:center; gap:10px; }
+  .steps li.st { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; font-weight:500; }
+  .steps .dot { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700; border:1.5px solid var(--line); background:var(--panel); color:var(--muted); transition:all .25s; }
+  .steps li.active { color:var(--ink); font-weight:600; }
+  .steps li.active .dot { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .steps li.done .dot { background:var(--ok); border-color:var(--ok); color:#fff; }
+  .steps li.line { width:36px; height:2px; border-radius:2px; background:var(--line); transition:background .25s; }
+  .steps li.done + li.line { background:var(--ok); }
+  .top-actions { display:flex; justify-content:flex-end; align-items:center; gap:12px; }
+  #dl { height:40px; padding:0 20px; font-size:14px; border-radius:10px; }
+  #dl svg.i { width:18px; height:18px; }
+
+  /* ===== 主版面 ===== */
+  .app { flex:1; min-height:0; display:grid; grid-template-columns:380px 1fr; }
+  .left { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+  .lscroll { flex:1; overflow:auto; padding:18px 18px 8px; display:flex; flex-direction:column; gap:22px; }
+  .lfoot { flex:none; padding:12px 18px 14px; border-top:1px solid var(--line); background:var(--panel); }
+  .right { display:flex; flex-direction:column; min-height:0; min-width:0; }
+  @media (max-width:900px) {
+    body { display:block; height:auto; }
+    .top { grid-template-columns:1fr auto; height:auto; padding:10px 14px; }
+    .steps { display:none; }
+    .app { display:block; }
+    .left { border-right:0; border-bottom:1px solid var(--line); }
+    .lscroll { overflow:visible; }
+    .right { min-height:70vh; }
+  }
+
+  .sec-h { display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:12px; font-weight:700; letter-spacing:.6px; color:var(--muted); text-transform:uppercase; }
+  .sec-h .badge { background:var(--accent-soft); color:var(--accent); border-radius:99px; min-width:20px; height:20px; padding:0 7px; display:inline-grid; place-items:center; font-size:11px; letter-spacing:0; }
+  .sec-h .sp { margin-left:auto; }
+
+  /* 上傳區 */
+  .drop { border:1.5px dashed var(--accent-line); background:var(--accent-soft); border-radius:12px; padding:18px 14px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s, transform .15s; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .drop:hover { border-color:var(--accent); }
+  .drop.over { border-style:solid; border-color:var(--accent); background:color-mix(in srgb, var(--accent) 16%, var(--panel)); transform:scale(1.01); }
+  .drop .dz-ic { width:42px; height:42px; border-radius:50%; background:var(--panel); color:var(--accent); display:grid; place-items:center; box-shadow:var(--sh1); margin-bottom:4px; }
+  .drop .dz-ic svg.i { width:20px; height:20px; }
+  .drop strong { font-size:14px; }
+  .drop span.h { color:var(--muted); font-size:12px; }
   #file { display:none; }
-  .opts { display:grid; gap:8px; margin:14px 0 10px; }
-  .opts label { display:flex; align-items:center; gap:6px; }
-  input[type=text] { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--ink); width:100%; }
-  button { font:inherit; border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:6px; padding:5px 11px; cursor:pointer; }
-  button:hover:not(:disabled) { border-color:var(--accent); }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600; padding:7px 16px; }
-  button.danger { color:var(--warn); }
-  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  ul.files { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-  ul.files li { display:grid; grid-template-columns:22px 1fr auto; gap:6px 8px; align-items:center; padding:7px 10px; border-top:1px solid var(--line); }
-  ul.files li:first-child { border-top:0; }
-  ul.files .n { color:var(--muted); text-align:right; }
-  ul.files .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  ul.files .meta { grid-column:2; color:var(--muted); font-size:12px; margin-top:-4px; }
-  ul.files .ops { grid-column:3; grid-row:1 / span 2; display:flex; gap:3px; }
-  ul.files .ops button { padding:1px 7px; }
-  .empty { padding:14px; color:var(--muted); text-align:center; }
-  #status { margin:12px 0 6px; min-height:20px; font-size:13px; }
-  #status.ok { color:var(--ok); } #status.err { color:var(--err); }
-  progress { width:100%; height:8px; display:none; }
-  .lactions { margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; }
-  .note { color:var(--muted); font-size:12px; margin-top:14px; }
+  .switch-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding:0 2px; cursor:pointer; font-size:13px; color:var(--ink); }
 
-  .rhead { display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); }
-  .rhead .title { font-weight:600; margin-right:auto; }
-  .rhead .count { color:var(--muted); font-size:13px; }
-  #grid { flex:1; overflow:auto; padding:14px; display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; align-content:start; }
-  #grid .placeholder { grid-column:1/-1; text-align:center; color:var(--muted); padding:60px 10px; }
-  .card { position:relative; border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:6px; display:flex; flex-direction:column; gap:4px; }
-  .card.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent) inset; }
-  .card .thumb { position:relative; background:var(--thumb); aspect-ratio:3/4; border-radius:4px; overflow:hidden; cursor:zoom-in; display:flex; align-items:center; justify-content:center; }
-  .card canvas { width:100%; height:auto; display:block; }
-  .card .cap { font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .card .cap b { color:var(--ink); font-weight:600; }
-  .card .chk { position:absolute; top:10px; left:10px; z-index:2; width:18px; height:18px; cursor:pointer; }
-  .card .del { position:absolute; top:8px; right:8px; z-index:2; padding:0 7px; line-height:22px; background:var(--panel); }
-  .card.gone .thumb { opacity:.3; }
+  /* 開關 */
+  .switch { position:relative; width:38px; height:22px; flex:none; display:inline-block; }
+  .switch input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; z-index:1; }
+  .switch i { position:absolute; inset:0; border-radius:99px; background:#3a3b46; transition:background .2s; }
+  .switch i::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:transform .2s; }
+  .switch input:checked + i { background:var(--accent); }
+  .switch input:checked + i::after { transform:translateX(16px); }
+  .switch input:focus-visible + i { outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* 檔案清單 */
+  ul.files { list-style:none; margin:12px 0 0; padding:0; display:flex; flex-direction:column; gap:6px; }
+  ul.files li { display:grid; grid-template-columns:14px 24px 1fr auto; align-items:center; gap:8px; padding:8px 8px 8px 6px; border:1px solid var(--line); border-radius:9px; background:var(--panel); box-shadow:var(--sh1); transition:border-color .15s, box-shadow .15s, opacity .15s; }
+  ul.files li:not(.empty):hover { border-color:var(--accent-line); box-shadow:var(--sh2); }
+  ul.files li.dragging { opacity:.4; }
+  ul.files li.dragover { border-color:var(--accent); box-shadow:0 -3px 0 var(--accent); }
+  ul.files li.empty { display:block; border-style:dashed; box-shadow:none; background:transparent; text-align:center; color:var(--muted); font-size:12.5px; padding:12px; }
+  ul.files .grip { color:var(--line); cursor:grab; display:grid; place-items:center; }
+  ul.files li:hover .grip { color:var(--muted); }
+  ul.files .grip svg.i { width:14px; height:14px; fill:currentColor; stroke:none; }
+  ul.files .n { width:24px; height:24px; border-radius:7px; background:var(--accent-soft); color:var(--accent); font-size:12px; font-weight:700; display:grid; place-items:center; }
+  ul.files .finfo { min-width:0; }
+  ul.files .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; font-size:13px; }
+  ul.files .meta { color:var(--muted); font-size:11.5px; }
+  ul.files .ops { display:flex; gap:1px; opacity:0; transition:opacity .15s; }
+  ul.files li:hover .ops, ul.files li:focus-within .ops { opacity:1; }
+  @media (hover:none) { ul.files .ops { opacity:1; } }
+  .lactions { display:flex; gap:6px; margin-top:10px; }
+  .note { color:var(--muted); font-size:12px; margin:8px 0 0; line-height:1.55; }
+
+  /* 輸出檔名 */
+  .field { display:flex; align-items:center; height:36px; border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:0 10px; gap:8px; transition:border-color .15s, box-shadow .15s; }
+  .field:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .field svg.i { color:var(--muted); }
+  .field input { flex:1; min-width:0; border:0; outline:0; background:transparent; font:inherit; color:var(--ink); height:100%; }
+
+  /* ===== 頁碼設定面板 ===== */
+  .pn { border:1px solid var(--line); border-radius:12px; background:var(--panel); box-shadow:var(--sh1); overflow:hidden; }
+  .pn .phead { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; cursor:pointer; user-select:none; font-weight:600; font-size:13.5px; }
+  .pn .phead .t { display:flex; align-items:center; gap:8px; }
+  .pn .phead .t svg.i { color:var(--accent); }
+  #pnBody { display:grid; grid-template-rows:1fr; transition:grid-template-rows .3s ease; }
+  #pnBody.off { grid-template-rows:0fr; }
+  #pnBody .pn-in { overflow:hidden; min-height:0; padding:0 14px; border-top:1px solid var(--line2); }
+  #pnBody.off .pn-in { visibility:hidden; border-top-color:transparent; transition:visibility 0s .3s; }
+  #pnBody:not(.off) .pn-in { padding-bottom:12px; }
+  .pn .row { display:grid; grid-template-columns:46px 1fr; align-items:center; gap:8px 10px; padding:9px 0; border-bottom:1px solid var(--line2); min-height:46px; }
+  .pn .k { color:var(--muted); font-size:12.5px; white-space:nowrap; }
+  .pn .ctl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+  .pn .ctl .u { color:var(--muted); font-size:13px; }
+  .pn .chk-row { display:flex; align-items:center; gap:9px; cursor:pointer; padding:11px 0 9px; font-size:13px; border-bottom:1px solid var(--line2); }
+  .pn .chk-row input { width:16px; height:16px; margin:0; accent-color:var(--accent); }
+  .pn input[type=number] { font:inherit; width:74px; height:32px; padding:2px 8px; text-align:center; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); transition:border-color .15s, box-shadow .15s; }
+  .pn input[type=number]:focus { outline:0; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .seg { display:grid; grid-auto-flow:column; grid-auto-columns:1fr; width:100%; padding:3px; gap:3px; background:var(--thumb); border-radius:9px; }
+  .seg.grid2 { grid-auto-flow:row; grid-template-columns:1fr 1fr; }
+  .seg label { position:relative; display:block; margin:0; }
+  .seg input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+  .seg span { display:flex; align-items:center; justify-content:center; height:30px; padding:0 6px; font-size:12.5px; white-space:nowrap; cursor:pointer; border-radius:7px; color:var(--muted); transition:background .15s,color .15s,box-shadow .15s; }
+  .seg label:hover span { color:var(--ink); }
+  .seg input:checked + span { background:#2a2c3a; color:var(--accent); font-weight:700; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+  .seg input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
+  .pn .hint { color:var(--muted); font-size:12px; line-height:1.55; margin:10px 0 0; padding:8px 10px; background:var(--accent-soft); border-radius:8px; }
+
+  /* ===== 作業進度條 ===== */
+  .task { display:none; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); box-shadow:var(--sh1); --c:var(--accent); margin-bottom:10px; }
+  .task.ok { --c:var(--ok); border-color:color-mix(in srgb, var(--ok) 35%, var(--line)); } .task.err { --c:var(--err); border-color:color-mix(in srgb, var(--err) 35%, var(--line)); }
+  .task .trow { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
+  #status { flex:1; min-width:0; font-size:12.5px; line-height:1.45; word-break:break-all; color:var(--ink); }
+  .task.ok #status { color:var(--ok); } .task.err #status { color:var(--err); }
+  .task .pct { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--c); min-width:38px; text-align:right; }
+  .task.ok .pct::before { content:"✓ "; }
+  .bar { height:8px; border-radius:99px; background:var(--thumb); overflow:hidden; display:none; }
+  .bar i { display:block; height:100%; width:0; border-radius:inherit; background:var(--c); position:relative; overflow:hidden; transition:width .45s cubic-bezier(.22,.8,.3,1), background-color .3s; }
+  .task:not(.ok):not(.err) .bar i::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent); transform:translateX(-100%); animation:shine 1.2s linear infinite; }
+  @keyframes shine { to { transform:translateX(100%); } }
+  .trust { display:flex; align-items:center; justify-content:center; gap:6px; color:var(--muted); font-size:12px; }
+  .trust svg.i { width:13px; height:13px; }
+
+  /* ===== 右側預覽 ===== */
+  .rhead { flex:none; display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); min-height:56px; }
+  .rhead .title { font-weight:700; font-size:15px; }
+  .rhead .count { color:var(--muted); font-size:12.5px; margin-right:auto; padding:3px 10px; background:var(--thumb); border-radius:99px; }
+  .rhead .count:empty { display:none; }
+  .rhead .title { }
+  .rhead .grp { display:flex; gap:4px; align-items:center; }
+  .rhead .vsep { width:1px; height:20px; background:var(--line); margin:0 4px; }
+  .zoom { display:flex; align-items:center; gap:8px; color:var(--muted); }
+  .zoom svg.i { width:14px; height:14px; }
+  .zoom input { width:96px; accent-color:var(--accent); }
+  #grid { flex:1; overflow:auto; padding:20px; background:var(--stage); display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--tw,160px),1fr)); gap:16px; align-content:start; }
+  #grid .placeholder { grid-column:1/-1; text-align:center; color:var(--muted); padding:12vh 16px 0; max-width:420px; margin:0 auto; line-height:1.9; font-size:13.5px; }
+  #grid .placeholder::before { content:""; display:block; width:76px; height:76px; margin:0 auto 18px; background:var(--accent); opacity:.85;
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 3v5h5M9 13h6M9 17h4'/%3E%3C/svg%3E") center/contain no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 3v5h5M9 13h6M9 17h4'/%3E%3C/svg%3E") center/contain no-repeat; }
+
+  .card { position:relative; border:1px solid var(--line); border-radius:11px; background:var(--panel); padding:8px; display:flex; flex-direction:column; gap:6px; box-shadow:var(--sh1); transition:transform .15s, box-shadow .15s, border-color .15s, background .15s; }
+  .card:hover { transform:translateY(-2px); box-shadow:var(--sh2); }
+  .card.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent); background:var(--accent-soft); }
+  .card .thumb { position:relative; background:var(--thumb); aspect-ratio:3/4; border-radius:6px; overflow:hidden; cursor:zoom-in; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 1px rgba(0,0,0,.05); }
+  .card canvas { width:100%; height:auto; display:block; background:#fff; }
+  .card .cap { font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 2px; }
+  .card .cap b { color:var(--ink); font-weight:700; }
+  .card .lbl { font-size:11px; color:var(--accent); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 2px; }
+  .card .lbl:empty { display:none; }
+  .card .chk { position:absolute; top:13px; left:13px; z-index:2; width:22px; height:22px; margin:0; cursor:pointer; -webkit-appearance:none; appearance:none; border-radius:50%; border:2px solid #fff; background:rgba(20,28,50,.35); box-shadow:0 1px 4px rgba(0,0,0,.35); opacity:0; transition:opacity .15s, background .15s, transform .15s; }
+  .card:hover .chk, .card .chk:checked, .card .chk:focus-visible { opacity:1; }
+  .card .chk:checked { background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/14px no-repeat; border-color:#fff; }
+  .card .chk:hover { transform:scale(1.1); }
+  .card .del { position:absolute; top:12px; right:12px; z-index:2; width:26px; height:26px; padding:0; border-radius:50%; background:var(--panel); border:0; box-shadow:0 1px 6px rgba(0,0,0,.3); color:var(--muted); opacity:0; }
+  .card:hover .del, .card .del:focus-visible, .card.gone .del { opacity:1; }
+  .card .del:hover:not(:disabled) { background:var(--err); color:#fff; }
+  .card.gone .del:hover:not(:disabled) { background:var(--accent); }
+  @media (hover:none) { .card .chk, .card .del { opacity:1; } }
+  .card.gone .thumb { opacity:.28; filter:grayscale(1); }
   .card.gone .tag { display:flex; }
-  .tag { display:none; position:absolute; inset:0; align-items:center; justify-content:center; font-weight:700; color:var(--warn); pointer-events:none; z-index:1; }
+  .tag { display:none; position:absolute; inset:0; align-items:center; justify-content:center; font-weight:700; color:var(--err); pointer-events:none; z-index:1; font-size:13px; letter-spacing:1px; }
 
-  .pn { border:1px solid var(--line); border-radius:8px; padding:8px 12px 10px; margin:0 0 12px; }
-  .pn legend { padding:0 6px; font-weight:600; }
-  .pn legend label, .pn .row label { display:flex; align-items:center; gap:4px; }
-  .pn .row { display:flex; flex-wrap:wrap; gap:4px 12px; align-items:center; margin:7px 0; }
-  .pn .k { color:var(--muted); min-width:58px; }
-  .pn input[type=number] { font:inherit; width:62px; padding:3px 6px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--ink); }
-  #pnBody.off { opacity:.45; }
-  .pn .hint { color:var(--muted); font-size:12px; margin:4px 0 0; }
-  .card .lbl { font-size:11px; color:var(--accent); min-height:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #modal { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; flex-direction:column; align-items:center; z-index:50; padding:12px; }
-  #modal.open { display:flex; }
-  #modal .mbar { display:flex; gap:10px; align-items:center; color:#fff; margin-bottom:10px; flex-wrap:wrap; justify-content:center; }
-  #modal .mbody { flex:1; overflow:auto; max-width:100%; }
-  #modal canvas { display:block; margin:0 auto; background:#fff; max-width:100%; height:auto; }
+  /* ===== 放大檢視 ===== */
+  #modal { position:fixed; inset:0; background:rgba(8,10,18,.84); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); display:none; flex-direction:column; align-items:center; z-index:50; padding:14px; }
+  #modal.open { display:flex; animation:fade .18s ease; }
+  @keyframes fade { from { opacity:0; } }
+  #modal .mbar { display:flex; gap:6px; align-items:center; color:#fff; margin-bottom:12px; flex-wrap:wrap; justify-content:center; padding:6px; border-radius:99px; background:rgba(34,38,50,.92); border:1px solid rgba(255,255,255,.1); box-shadow:var(--sh3); }
+  #modal .mbar button { background:transparent; border-color:transparent; color:#fff; box-shadow:none; border-radius:99px; height:32px; }
+  #modal .mbar button:hover:not(:disabled) { background:rgba(255,255,255,.14); color:#fff; border-color:transparent; }
+  #modal .mbar #mDel:hover:not(:disabled) { background:var(--err); }
+  #mInfo { font-size:13px; padding:0 10px; max-width:46vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #modal .mbody { flex:1; overflow:auto; max-width:100%; width:100%; }
+  #modal canvas { display:block; margin:0 auto; background:#fff; max-width:100%; height:auto; border-radius:4px; box-shadow:var(--sh3); }
   #modal .mbody.gone canvas { opacity:.3; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-select" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></symbol>
+    <symbol id="i-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="5" r="1.7"/><circle cx="15" cy="5" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="19" r="1.7"/><circle cx="15" cy="19" r="1.7"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  </defs>
+</svg>
+
+<header class="top">
+  <div class="brand">
+    <span class="logo"><svg class="i"><use href="#i-layers"/></svg></span>
+    <div><b>PDF 合併工具</b><small>Sara 專用</small></div>
+  </div>
+  <ol class="steps" id="steps" aria-label="作業步驟">
+    <li class="st" data-s="1"><span class="dot">1</span><span>匯入檔案</span></li><li class="line"></li>
+    <li class="st" data-s="2"><span class="dot">2</span><span>整理頁面</span></li><li class="line"></li>
+    <li class="st" data-s="3"><span class="dot">3</span><span>下載</span></li>
+  </ol>
+  <div class="top-actions">
+    <button id="dl" class="primary" disabled><svg class="i"><use href="#i-download"/></svg>確認並下載</button>
+  </div>
+</header>
+
 <div class="app">
-  <section class="left">
-    <h1>PDF 自動合併工具 (Sara 專用)</h1>
-    <p class="sub">匯入多個 PDF 後自動合併,右側預覽、刪減頁面,確認後再下載。檔案只在本機處理,不會上傳。</p>
+  <aside class="left">
+    <div class="lscroll">
+      <section>
+        <h2 class="sec-h"><svg class="i"><use href="#i-file"/></svg>檔案 <span class="badge" id="fileCount" style="display:none"></span></h2>
+        <div id="drop" class="drop" tabindex="0" role="button" aria-label="匯入 PDF">
+          <span class="dz-ic"><svg class="i"><use href="#i-upload"/></svg></span>
+          <strong>點擊選擇 PDF,或拖曳到這裡</strong>
+          <span class="h">可一次選多個,也可分多次匯入</span>
+        </div>
+        <input type="file" id="file" accept="application/pdf,.pdf" multiple>
+        <label class="switch-row"><span>匯入時依檔名排序</span><span class="switch"><input type="checkbox" id="sortName"><i></i></span></label>
 
-    <div id="drop" tabindex="0" role="button" aria-label="匯入 PDF">
-      <strong>點擊選擇 PDF,或拖曳到這裡</strong>
-      <span>可一次選多個,也可分多次匯入</span>
+        <ul class="files" id="list"><li class="empty">尚未匯入檔案</li></ul>
+        <div class="lactions">
+          <button id="remerge" class="ghost" disabled><svg class="i"><use href="#i-refresh"/></svg>重新合併</button>
+          <button id="clear" class="ghost danger" disabled><svg class="i"><use href="#i-trash"/></svg>清空清單</button>
+        </div>
+        <p class="note">拖曳或用箭頭調整順序、移除檔案後,會自動重新合併,並重置右側的頁面刪減。</p>
+      </section>
+
+      <section>
+        <h2 class="sec-h"><svg class="i"><use href="#i-download"/></svg>輸出</h2>
+        <label class="field"><svg class="i"><use href="#i-file"/></svg><input type="text" id="outName" value="合併.pdf" aria-label="輸出檔名" spellcheck="false"></label>
+      </section>
+
+      <section>
+        <h2 class="sec-h"><svg class="i"><use href="#i-hash"/></svg>頁碼</h2>
+        <div class="pn" id="pn">
+          <label class="phead"><span class="t">加入頁碼</span><span class="switch"><input type="checkbox" id="pnOn"><i></i></span></label>
+          <div id="pnBody" class="off"><div class="pn-in">
+            <div class="row"><span class="k">起始</span>
+              <div class="ctl"><span class="u">從第</span><input type="number" id="pnFrom" min="1" value="1"><span class="u">頁開始顯示</span></div></div>
+            <div class="row"><span class="k">頁碼</span>
+              <div class="ctl"><span class="u">該頁頁碼為</span><input type="number" id="pnStart" min="1" value="1"></div></div>
+            <div class="row"><span class="k">位置</span>
+              <div class="seg">
+                <label><input type="radio" name="pnPos" value="header"><span>頁首</span></label>
+                <label><input type="radio" name="pnPos" value="footer" checked><span>頁尾</span></label></div></div>
+            <div class="row"><span class="k">對齊</span>
+              <div class="seg">
+                <label><input type="radio" name="pnAlign" value="left"><span>靠左</span></label>
+                <label><input type="radio" name="pnAlign" value="center" checked><span>置中</span></label>
+                <label><input type="radio" name="pnAlign" value="right"><span>靠右</span></label></div></div>
+            <div class="row"><span class="k">格式</span>
+              <div class="seg grid2">
+                <label><input type="radio" name="pnStyle" value="plain"><span>1, 2, 3…</span></label>
+                <label><input type="radio" name="pnStyle" value="roman"><span>i, ii, iii…</span></label>
+                <label><input type="radio" name="pnStyle" value="slash"><span>1 / 10</span></label>
+                <label><input type="radio" name="pnStyle" value="zh" checked><span>第 1 頁，共 10 頁</span></label></div></div>
+            <div class="row" style="border-bottom:0"><span class="k">字級</span>
+              <div class="ctl"><input type="number" id="pnSize" min="6" max="36" value="10"><span class="u">pt</span></div></div>
+            <p class="hint">頁碼在按「確認並下載」時才加入,以刪減後的頁數計算;右側每頁縮圖下方會顯示該頁將印上的頁碼。</p>
+          </div></div>
+        </div>
+      </section>
     </div>
-    <input type="file" id="file" accept="application/pdf,.pdf" multiple>
 
-    <div class="opts">
-      <label style="flex-direction:column;align-items:stretch;gap:3px">輸出檔名 <input type="text" id="outName" value="合併.pdf"></label>
-      <label><input type="checkbox" id="sortName"> 匯入時依檔名排序</label>
-    </div>
-
-    <fieldset class="pn" id="pn">
-      <legend><label><input type="checkbox" id="pnOn"> 加入頁碼</label></legend>
-      <div id="pnBody" class="off">
-        <div class="row"><label><input type="checkbox" id="pnFirst"> 首頁不同(首頁不顯示頁碼)</label></div>
-        <div class="row"><span class="k">起始</span>
-          <label>從第 <input type="number" id="pnFrom" min="1" value="1"> 頁開始顯示</label>
-          <label>該頁頁碼為 <input type="number" id="pnStart" min="1" value="1"></label></div>
-        <div class="row"><span class="k">位置</span>
-          <label><input type="radio" name="pnPos" value="header"> 頁首</label>
-          <label><input type="radio" name="pnPos" value="footer" checked> 頁尾</label></div>
-        <div class="row"><span class="k">對齊</span>
-          <label><input type="radio" name="pnAlign" value="left"> 靠左</label>
-          <label><input type="radio" name="pnAlign" value="center" checked> 置中</label>
-          <label><input type="radio" name="pnAlign" value="right"> 靠右</label></div>
-        <div class="row"><span class="k">格式</span>
-          <label><input type="radio" name="pnStyle" value="plain"> 1, 2, 3…</label>
-          <label><input type="radio" name="pnStyle" value="zh" checked> 第 1 頁，共 10 頁</label>
-          <label><input type="radio" name="pnStyle" value="slash"> 1 / 10</label>
-          <label><input type="radio" name="pnStyle" value="roman"> i, ii, iii…</label></div>
-        <div class="row"><span class="k">字級</span><label><input type="number" id="pnSize" min="6" max="36" value="10"> pt</label></div>
-        <p class="hint">頁碼在按「確認並下載」時才加入,以刪減後的頁數計算;右側每頁縮圖下方會顯示該頁將印上的頁碼。</p>
+    <div class="lfoot">
+      <div id="task" class="task">
+        <div class="trow"><div id="status" role="status" aria-live="polite"></div><span id="pct" class="pct"></span></div>
+        <div id="prog" class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="fill"></i></div>
       </div>
-    </fieldset>
-
-    <ul class="files" id="list"><li class="empty">尚未匯入檔案</li></ul>
-
-    <div id="status" role="status"></div>
-    <progress id="prog" value="0" max="100"></progress>
-
-    <div class="lactions">
-      <button id="remerge" disabled>重新合併</button>
-      <button id="clear" disabled>清空清單</button>
+      <div class="trust"><svg class="i"><use href="#i-lock"/></svg>檔案僅在本機處理,不會上傳</div>
     </div>
-    <p class="note">調整檔案順序或移除檔案後會自動重新合併,並重置右側的頁面刪減。</p>
-  </section>
+  </aside>
 
-  <section class="right">
+  <main class="right">
     <div class="rhead">
-      <span class="title">合併預覽</span>
+      <span class="title">頁面預覽</span>
       <span class="count" id="count"></span>
-      <button id="selAll" disabled>全選</button>
-      <button id="selNone" disabled>取消選取</button>
-      <button id="delSel" class="danger" disabled>刪除選取</button>
-      <button id="restore" disabled>復原全部刪除</button>
-      <button id="dl" class="primary" disabled>確認並下載</button>
+      <div class="grp">
+        <button id="selAll" class="ghost" disabled><svg class="i"><use href="#i-select"/></svg>全選</button>
+        <button id="selNone" class="ghost" disabled><svg class="i"><use href="#i-square"/></svg>取消選取</button>
+      </div>
+      <span class="vsep"></span>
+      <div class="grp">
+        <button id="delSel" class="danger" disabled><svg class="i"><use href="#i-trash"/></svg>刪除選取</button>
+        <button id="restore" class="ghost" disabled><svg class="i"><use href="#i-undo"/></svg>復原全部刪除</button>
+      </div>
+      <span class="vsep"></span>
+      <label class="zoom" title="縮圖大小"><svg class="i"><use href="#i-grid"/></svg><input type="range" id="zoom" min="110" max="300" value="160" aria-label="縮圖大小"></label>
     </div>
     <div id="grid"><div class="placeholder">匯入 PDF 後,合併結果會顯示在這裡。<br>可勾選頁面按「刪除選取」,或按頁面右上角 × 單頁刪除;點縮圖可放大檢視。</div></div>
-  </section>
+  </main>
 </div>
 
 <div id="modal" role="dialog" aria-modal="true">
   <div class="mbar">
-    <button id="mPrev">← 上一頁</button>
+    <button id="mPrev"><svg class="i"><use href="#i-prev"/></svg>上一頁</button>
     <span id="mInfo"></span>
-    <button id="mNext">下一頁 →</button>
+    <button id="mNext">下一頁<svg class="i"><use href="#i-next"/></svg></button>
     <button id="mDel"></button>
-    <button id="mClose">關閉 (Esc)</button>
+    <button id="mClose"><svg class="i"><use href="#i-x"/></svg>關閉 (Esc)</button>
   </div>
   <div class="mbody" id="mBody"><canvas id="mCanvas"></canvas></div>
 </div>
@@ -173,15 +372,59 @@
   var pdfDoc = null;
   var mergeToken = 0, docToken = 0, timer = null;
   var cur = 0;               // modal page index
+  var dlDone = false, dragIdx = -1;
 
   var $ = function (id) { return document.getElementById(id); };
   var drop = $('drop'), input = $('file'), list = $('list');
   var statusEl = $('status'), prog = $('prog'), grid = $('grid');
   var dlBtn = $('dl'), remergeBtn = $('remerge'), clearBtn = $('clear');
+  remergeBtn.setAttribute('data-label', remergeBtn.innerHTML); dlBtn.setAttribute('data-label', dlBtn.innerHTML);
   var selAllBtn = $('selAll'), selNoneBtn = $('selNone'), delSelBtn = $('delSel'), restoreBtn = $('restore');
 
+  function ic(n) { return '<svg class="i" aria-hidden="true"><use href="#i-' + n + '"/></svg>'; }
   function fmtSize(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
-  function setStatus(m, c) { statusEl.textContent = m; statusEl.className = c || ''; }
+  var taskEl = $('task'), fillEl = $('fill'), pctEl = $('pct');
+  function setStatus(m, c) {
+    statusEl.textContent = m;
+    taskEl.className = 'task' + (c ? ' ' + c : '');
+    taskEl.style.display = m ? 'block' : 'none';
+    pctEl.style.display = prog.style.display === 'block' ? '' : 'none';
+    if (c === 'ok') { prog.value = 100; }
+  }
+  /* prog.value 驅動：上方進度條 + 目前作業的按鈕填色 */
+  var progBtn = null, progLbl = '', progDone = '', progTimer = null;
+  Object.defineProperty(prog, 'value', {
+    configurable: true,
+    get: function () { return this._v || 0; },
+    set: function (v) {
+      this._v = v; var r = Math.round(v);
+      fillEl.style.width = v + '%'; pctEl.textContent = r + '%';
+      prog.setAttribute('aria-valuenow', r);
+      if (progBtn) {
+        progBtn.style.setProperty('--p', v + '%');
+        if (v >= 100) { progBtn.textContent = progDone; progBtn.classList.add('done'); }
+        else progBtn.textContent = progLbl + ' ' + r + '%';
+      }
+    }
+  });
+  function progStart(btn, lbl, done) {
+    progEnd(true);
+    progBtn = btn; progLbl = lbl; progDone = done;
+    btn.classList.add('pbtn', 'working'); btn.classList.remove('done');
+    prog.style.display = 'block';
+    prog.value = 0;
+  }
+  function progEnd(now) {
+    clearTimeout(progTimer);
+    var b = progBtn; if (!b) return;
+    var finish = function () {
+      b.classList.remove('working', 'done'); b.style.setProperty('--p', '0%');
+      b.innerHTML = b.getAttribute('data-label');
+      if (progBtn === b) progBtn = null;
+    };
+    if (now) finish(); else progTimer = setTimeout(finish, 1800);
+  }
+  function tick() { return new Promise(function (r) { setTimeout(r, 40); }); }
 
   /* ---------- PDF.js worker (works even when opened from file://) ---------- */
   var workerReady = null;
@@ -197,33 +440,60 @@
   /* ---------- file list ---------- */
   function renderList() {
     list.innerHTML = '';
+    var fc = $('fileCount'); fc.textContent = files.length; fc.style.display = files.length ? '' : 'none';
     if (!files.length) list.innerHTML = '<li class="empty">尚未匯入檔案</li>';
     files.forEach(function (f, i) {
       var li = document.createElement('li');
-      li.innerHTML = '<span class="n"></span><span class="name"></span><span class="meta"></span><span class="ops"></span>';
-      li.children[0].textContent = i + 1;
-      li.children[1].textContent = f.name; li.children[1].title = f.name;
-      li.children[2].textContent = fmtSize(f.size) + (f.pages ? ' · ' + f.pages + ' 頁' : '');
-      var ops = li.children[3];
-      [['↑', function () { moveFile(i, -1); }, i === 0],
-       ['↓', function () { moveFile(i, 1); }, i === files.length - 1],
-       ['移除', function () { files.splice(i, 1); changed(); }, false]
+      li.draggable = true;
+      li.innerHTML = '<span class="grip" title="拖曳調整順序">' + ic('grip') + '</span><span class="n"></span><div class="finfo"><div class="name"></div><div class="meta"></div></div><span class="ops"></span>';
+      li.querySelector('.n').textContent = i + 1;
+      var nm = li.querySelector('.name'); nm.textContent = f.name; nm.title = f.name;
+      li.querySelector('.meta').textContent = fmtSize(f.size) + (f.pages ? ' · ' + f.pages + ' 頁' : '');
+      var ops = li.querySelector('.ops');
+      [['up', '上移', function () { moveFile(i, -1); }, i === 0, ''],
+       ['down', '下移', function () { moveFile(i, 1); }, i === files.length - 1, ''],
+       ['x', '移除', function () { files.splice(i, 1); changed(); }, false, ' x']
       ].forEach(function (o) {
-        var b = document.createElement('button'); b.textContent = o[0]; b.onclick = o[1]; b.disabled = o[2]; ops.appendChild(b);
+        var b = document.createElement('button'); b.className = 'ib' + o[4]; b.innerHTML = ic(o[0]);
+        b.title = o[1]; b.setAttribute('aria-label', o[1]); b.onclick = o[2]; b.disabled = o[3]; ops.appendChild(b);
+      });
+      li.addEventListener('dragstart', function (e) { dragIdx = i; li.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(i)); } catch (x) {} });
+      li.addEventListener('dragend', function () { dragIdx = -1; li.classList.remove('dragging'); });
+      li.addEventListener('dragover', function (e) { if (dragIdx < 0) return; e.preventDefault(); li.classList.add('dragover'); });
+      li.addEventListener('dragleave', function () { li.classList.remove('dragover'); });
+      li.addEventListener('drop', function (e) {
+        li.classList.remove('dragover');
+        if (dragIdx < 0) return;
+        e.preventDefault(); e.stopPropagation();
+        var from = dragIdx; dragIdx = -1;
+        if (from === i) return;
+        var it = files.splice(from, 1)[0]; files.splice(i, 0, it); changed();
       });
       list.appendChild(li);
     });
     clearBtn.disabled = remergeBtn.disabled = !files.length;
+    updateSteps();
+  }
+  /* 步驟列:匯入 → 整理 → 下載 */
+  function updateSteps() {
+    var act = !files.length ? 1 : (!pages.length ? 1 : (dlDone ? 3 : 2));
+    Array.prototype.forEach.call(document.querySelectorAll('#steps li.st'), function (li) {
+      var s = +li.getAttribute('data-s');
+      var cls = s < act ? 'done' : (s === act ? (act === 3 ? 'done' : 'active') : '');
+      li.className = 'st ' + cls;
+      li.querySelector('.dot').textContent = cls === 'done' ? '✓' : s;
+    });
   }
   function moveFile(i, d) {
     var j = i + d; if (j < 0 || j >= files.length) return;
     var t = files[i]; files[i] = files[j]; files[j] = t; changed();
   }
   function changed() {
+    dlDone = false;
     renderList();
     resetPreview();
     clearTimeout(timer);
-    if (!files.length) { mergeToken++; setStatus(''); prog.style.display = 'none'; return; }
+    if (!files.length) { mergeToken++; progEnd(true); setStatus(''); prog.style.display = 'none'; return; }
     timer = setTimeout(merge, 400);
   }
   function addFiles(fl) {
@@ -240,7 +510,9 @@
     if (!files.length) return;
     var my = ++mergeToken;
     resetPreview();
-    prog.style.display = 'block'; prog.value = 0;
+    dlDone = false;
+    progStart(remergeBtn, '合併中', '✓ 合併完成');
+    setStatus('準備合併…');
     try {
       var out = await PDFLib.PDFDocument.create();
       var map = [];
@@ -252,20 +524,22 @@
         var cp = await out.copyPages(src, src.getPageIndices());
         cp.forEach(function (p) { out.addPage(p); map.push(i); });
         files[i].pages = cp.length;
-        prog.value = Math.round((i + 1) / files.length * 85);
+        prog.value = Math.round((i + 1) / files.length * 80);
         await new Promise(function (r) { setTimeout(r, 0); });
       }
       if (my !== mergeToken) return;
-      setStatus('正在產生預覽…');
+      setStatus('正在產生預覽…'); prog.value = 85;
       mergedBytes = await out.save();
       if (my !== mergeToken) return;
       renderList();
       pages = map.map(function (fi, k) { return { n: k + 1, src: fi, deleted: false, sel: false, card: null }; });
-      prog.value = 100;
+      prog.value = 92;
       await buildPreview();
       setStatus('合併完成:共 ' + pages.length + ' 頁(' + fmtSize(mergedBytes.length) + ')。請在右側確認後按「確認並下載」。', 'ok');
+      progEnd();
     } catch (e) {
       console.error(e);
+      progEnd(true);
       setStatus('合併失敗:' + (e && e.message ? e.message : e) + '(可能有檔案損毀或受密碼保護)', 'err');
     }
   }
@@ -290,7 +564,7 @@
         var page = await pdfDoc.getPage(p.n);
         var v1 = page.getViewport({ scale: 1 });
         var dpr = Math.min(window.devicePixelRatio || 1, 2);
-        var sc = (170 * dpr) / v1.width;
+        var sc = (300 * dpr) / v1.width;
         var vp = page.getViewport({ scale: sc });
         var cv = document.createElement('canvas');
         cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
@@ -325,7 +599,7 @@
     var frag = document.createDocumentFragment();
     pages.forEach(function (p) {
       var c = document.createElement('div'); c.className = 'card'; c._p = p; p.card = c;
-      c.innerHTML = '<input type="checkbox" class="chk" title="選取"><button class="del" title="刪除此頁">×</button>' +
+      c.innerHTML = '<input type="checkbox" class="chk" title="選取"><button class="del" title="刪除此頁">' + ic('x') + '</button>' +
         '<div class="thumb"><div class="tag">已刪除</div></div><div class="cap"></div><div class="lbl"></div>';
       c.querySelector('.cap').innerHTML = '<b>第 ' + p.n + ' 頁</b> ';
       c.querySelector('.cap').appendChild(document.createTextNode(files[p.src] ? files[p.src].name : ''));
@@ -343,7 +617,7 @@
     p.deleted = v;
     if (v) { p.sel = false; var ck = p.card.querySelector('.chk'); ck.checked = false; p.card.classList.remove('sel'); }
     p.card.classList.toggle('gone', v);
-    p.card.querySelector('.del').textContent = v ? '↺' : '×';
+    p.card.querySelector('.del').innerHTML = ic(v ? 'undo' : 'x');
     p.card.querySelector('.del').title = v ? '復原此頁' : '刪除此頁';
     updateCount();
   }
@@ -357,6 +631,7 @@
     selNoneBtn.disabled = !sel;
     delSelBtn.disabled = !sel;
     restoreBtn.disabled = !gone;
+    updateSteps();
     dlBtn.disabled = !total || (total - gone) === 0;
     updateLabels();
   }
@@ -366,7 +641,6 @@
   function getCfg() {
     return {
       on: $('pnOn').checked,
-      first: $('pnFirst').checked,
       from: Math.max(1, parseInt($('pnFrom').value, 10) || 1),
       start: Math.max(1, parseInt($('pnStart').value, 10) || 1),
       pos: radio('pnPos') || 'footer',
@@ -391,7 +665,7 @@
   function pageLabels(N, c) {
     var out = [], total = Math.max(1, c.start + (N - c.from));
     for (var P = 1; P <= N; P++) {
-      if (P < c.from || (c.first && P === 1)) out.push('');
+      if (P < c.from) out.push('');
       else out.push(fmtLabel(c.start + (P - c.from), total, c.style));
     }
     return out;
@@ -494,15 +768,21 @@
     var keep = pages.filter(function (p) { return !p.deleted; }).map(function (p) { return p.n - 1; });
     if (!keep.length) { setStatus('所有頁面都已刪除,沒有內容可下載。', 'err'); return; }
     dlBtn.disabled = true;
+    progStart(dlBtn, '處理中', '✓ 已下載');
     try {
       var bytes = mergedBytes, c = getCfg();
+      setStatus('正在準備下載…'); prog.value = 10; await tick();
       if (keep.length !== pages.length || c.on) {
         setStatus('正在產生最終檔案…');
         var doc = await PDFLib.PDFDocument.load(mergedBytes, { ignoreEncryption: true });
+        prog.value = 30; await tick();
         for (var i = pages.length - 1; i >= 0; i--) { if (pages[i].deleted) doc.removePage(i); }
-        if (c.on) await stampNumbers(doc, c);
+        prog.value = 45; await tick();
+        if (c.on) { setStatus('正在加入頁碼…'); await stampNumbers(doc, c); }
+        prog.value = 75; await tick();
         bytes = await doc.save();
       }
+      prog.value = 90; await tick();
       var name = ($('outName').value || '合併.pdf').trim();
       if (!/\.pdf$/i.test(name)) name += '.pdf';
       var a = document.createElement('a');
@@ -510,8 +790,11 @@
       a.download = name; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
       setStatus('已下載:' + name + '(共 ' + keep.length + ' 頁,' + fmtSize(bytes.length) + ')。', 'ok');
+      dlDone = true; updateSteps();
+      progEnd();
     } catch (e) {
       console.error(e);
+      progEnd(true);
       setStatus('下載失敗:' + (e && e.message ? e.message : e), 'err');
     }
     updateCount();
@@ -526,10 +809,14 @@
   drop.addEventListener('drop', function (e) { addFiles(e.dataTransfer.files); });
   document.getElementById('pn').addEventListener('input', updateLabels);
   document.getElementById('pn').addEventListener('change', updateLabels);
+  list.addEventListener('dragover', function (e) { if (dragIdx < 0 && e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) e.preventDefault(); });
+  list.addEventListener('drop', function (e) { if (dragIdx < 0 && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); addFiles(e.dataTransfer.files); } });
+  $('zoom').oninput = function () { grid.style.setProperty('--tw', this.value + 'px'); };
   dlBtn.onclick = download;
   remergeBtn.onclick = merge;
   clearBtn.onclick = function () { files = []; changed(); };
 
+  updateSteps();
   if (!window.PDFLib) setStatus('尚未載入 pdf-lib,請確認網路連線後重新整理頁面。', 'err');
 })();
 </script>
