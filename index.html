@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF 自動合併工具 (Sara 專用)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg:#f3f5f7; --panel:#ffffff; --ink:#1d2733; --muted:#66727f; --line:#d6dce2;
+    --accent:#0b5cad; --accent-ink:#ffffff; --ok:#177245; --err:#b3261e; --warn:#b3261e; --thumb:#e9edf1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181d; --panel:#1c2229; --ink:#e6eaee; --muted:#93a0ad; --line:#2f3841; --accent:#4c9be8; --accent-ink:#0b1219; --ok:#5fcf93; --err:#ff8a80; --warn:#ff8a80; --thumb:#252d35; }
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; line-height:1.5; font-size:14px; }
+  .app { display:grid; grid-template-columns:360px 1fr; gap:16px; height:100vh; padding:16px; }
+  @media (max-width:860px) { .app { grid-template-columns:1fr; height:auto; } .right { min-height:70vh; } }
+  .left, .right { background:var(--panel); border:1px solid var(--line); border-radius:10px; display:flex; flex-direction:column; min-height:0; }
+  .left { padding:16px; overflow:auto; }
+  .right { overflow:hidden; }
+  h1 { font-size:20px; margin:0 0 2px; }
+  .sub { color:var(--muted); margin:0 0 14px; font-size:13px; }
+  #drop { border:2px dashed var(--line); border-radius:10px; padding:22px 12px; text-align:center; cursor:pointer; transition:border-color .15s; }
+  #drop.over, #drop:focus-visible { border-color:var(--accent); outline:none; }
+  #drop strong { display:block; font-size:15px; margin-bottom:2px; }
+  #drop span { color:var(--muted); font-size:12px; }
+  #file { display:none; }
+  .opts { display:grid; gap:8px; margin:14px 0 10px; }
+  .opts label { display:flex; align-items:center; gap:6px; }
+  input[type=text] { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--ink); width:100%; }
+  button { font:inherit; border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:6px; padding:5px 11px; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600; padding:7px 16px; }
+  button.danger { color:var(--warn); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  ul.files { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  ul.files li { display:grid; grid-template-columns:22px 1fr auto; gap:6px 8px; align-items:center; padding:7px 10px; border-top:1px solid var(--line); }
+  ul.files li:first-child { border-top:0; }
+  ul.files .n { color:var(--muted); text-align:right; }
+  ul.files .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  ul.files .meta { grid-column:2; color:var(--muted); font-size:12px; margin-top:-4px; }
+  ul.files .ops { grid-column:3; grid-row:1 / span 2; display:flex; gap:3px; }
+  ul.files .ops button { padding:1px 7px; }
+  .empty { padding:14px; color:var(--muted); text-align:center; }
+  #status { margin:12px 0 6px; min-height:20px; font-size:13px; }
+  #status.ok { color:var(--ok); } #status.err { color:var(--err); }
+  progress { width:100%; height:8px; display:none; }
+  .lactions { margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; }
+  .note { color:var(--muted); font-size:12px; margin-top:14px; }
+
+  .rhead { display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); }
+  .rhead .title { font-weight:600; margin-right:auto; }
+  .rhead .count { color:var(--muted); font-size:13px; }
+  #grid { flex:1; overflow:auto; padding:14px; display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; align-content:start; }
+  #grid .placeholder { grid-column:1/-1; text-align:center; color:var(--muted); padding:60px 10px; }
+  .card { position:relative; border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:6px; display:flex; flex-direction:column; gap:4px; }
+  .card.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent) inset; }
+  .card .thumb { position:relative; background:var(--thumb); aspect-ratio:3/4; border-radius:4px; overflow:hidden; cursor:zoom-in; display:flex; align-items:center; justify-content:center; }
+  .card canvas { width:100%; height:auto; display:block; }
+  .card .cap { font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .card .cap b { color:var(--ink); font-weight:600; }
+  .card .chk { position:absolute; top:10px; left:10px; z-index:2; width:18px; height:18px; cursor:pointer; }
+  .card .del { position:absolute; top:8px; right:8px; z-index:2; padding:0 7px; line-height:22px; background:var(--panel); }
+  .card.gone .thumb { opacity:.3; }
+  .card.gone .tag { display:flex; }
+  .tag { display:none; position:absolute; inset:0; align-items:center; justify-content:center; font-weight:700; color:var(--warn); pointer-events:none; z-index:1; }
+
+  .pn { border:1px solid var(--line); border-radius:8px; padding:8px 12px 10px; margin:0 0 12px; }
+  .pn legend { padding:0 6px; font-weight:600; }
+  .pn legend label, .pn .row label { display:flex; align-items:center; gap:4px; }
+  .pn .row { display:flex; flex-wrap:wrap; gap:4px 12px; align-items:center; margin:7px 0; }
+  .pn .k { color:var(--muted); min-width:58px; }
+  .pn input[type=number] { font:inherit; width:62px; padding:3px 6px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--ink); }
+  #pnBody.off { opacity:.45; }
+  .pn .hint { color:var(--muted); font-size:12px; margin:4px 0 0; }
+  .card .lbl { font-size:11px; color:var(--accent); min-height:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; flex-direction:column; align-items:center; z-index:50; padding:12px; }
+  #modal.open { display:flex; }
+  #modal .mbar { display:flex; gap:10px; align-items:center; color:#fff; margin-bottom:10px; flex-wrap:wrap; justify-content:center; }
+  #modal .mbody { flex:1; overflow:auto; max-width:100%; }
+  #modal canvas { display:block; margin:0 auto; background:#fff; max-width:100%; height:auto; }
+  #modal .mbody.gone canvas { opacity:.3; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="left">
+    <h1>PDF 自動合併工具 (Sara 專用)</h1>
+    <p class="sub">匯入多個 PDF 後自動合併,右側預覽、刪減頁面,確認後再下載。檔案只在本機處理,不會上傳。</p>
+
+    <div id="drop" tabindex="0" role="button" aria-label="匯入 PDF">
+      <strong>點擊選擇 PDF,或拖曳到這裡</strong>
+      <span>可一次選多個,也可分多次匯入</span>
+    </div>
+    <input type="file" id="file" accept="application/pdf,.pdf" multiple>
+
+    <div class="opts">
+      <label style="flex-direction:column;align-items:stretch;gap:3px">輸出檔名 <input type="text" id="outName" value="合併.pdf"></label>
+      <label><input type="checkbox" id="sortName"> 匯入時依檔名排序</label>
+    </div>
+
+    <fieldset class="pn" id="pn">
+      <legend><label><input type="checkbox" id="pnOn"> 加入頁碼</label></legend>
+      <div id="pnBody" class="off">
+        <div class="row"><label><input type="checkbox" id="pnFirst"> 首頁不同(首頁不顯示頁碼)</label></div>
+        <div class="row"><span class="k">起始</span>
+          <label>從第 <input type="number" id="pnFrom" min="1" value="1"> 頁開始顯示</label>
+          <label>該頁頁碼為 <input type="number" id="pnStart" min="1" value="1"></label></div>
+        <div class="row"><span class="k">位置</span>
+          <label><input type="radio" name="pnPos" value="header"> 頁首</label>
+          <label><input type="radio" name="pnPos" value="footer" checked> 頁尾</label></div>
+        <div class="row"><span class="k">對齊</span>
+          <label><input type="radio" name="pnAlign" value="left"> 靠左</label>
+          <label><input type="radio" name="pnAlign" value="center" checked> 置中</label>
+          <label><input type="radio" name="pnAlign" value="right"> 靠右</label></div>
+        <div class="row"><span class="k">格式</span>
+          <label><input type="radio" name="pnStyle" value="plain"> 1, 2, 3…</label>
+          <label><input type="radio" name="pnStyle" value="zh" checked> 第 1 頁，共 10 頁</label>
+          <label><input type="radio" name="pnStyle" value="slash"> 1 / 10</label>
+          <label><input type="radio" name="pnStyle" value="roman"> i, ii, iii…</label></div>
+        <div class="row"><span class="k">字級</span><label><input type="number" id="pnSize" min="6" max="36" value="10"> pt</label></div>
+        <p class="hint">頁碼在按「確認並下載」時才加入,以刪減後的頁數計算;右側每頁縮圖下方會顯示該頁將印上的頁碼。</p>
+      </div>
+    </fieldset>
+
+    <ul class="files" id="list"><li class="empty">尚未匯入檔案</li></ul>
+
+    <div id="status" role="status"></div>
+    <progress id="prog" value="0" max="100"></progress>
+
+    <div class="lactions">
+      <button id="remerge" disabled>重新合併</button>
+      <button id="clear" disabled>清空清單</button>
+    </div>
+    <p class="note">調整檔案順序或移除檔案後會自動重新合併,並重置右側的頁面刪減。</p>
+  </section>
+
+  <section class="right">
+    <div class="rhead">
+      <span class="title">合併預覽</span>
+      <span class="count" id="count"></span>
+      <button id="selAll" disabled>全選</button>
+      <button id="selNone" disabled>取消選取</button>
+      <button id="delSel" class="danger" disabled>刪除選取</button>
+      <button id="restore" disabled>復原全部刪除</button>
+      <button id="dl" class="primary" disabled>確認並下載</button>
+    </div>
+    <div id="grid"><div class="placeholder">匯入 PDF 後,合併結果會顯示在這裡。<br>可勾選頁面按「刪除選取」,或按頁面右上角 × 單頁刪除;點縮圖可放大檢視。</div></div>
+  </section>
+</div>
+
+<div id="modal" role="dialog" aria-modal="true">
+  <div class="mbar">
+    <button id="mPrev">← 上一頁</button>
+    <span id="mInfo"></span>
+    <button id="mNext">下一頁 →</button>
+    <button id="mDel"></button>
+    <button id="mClose">關閉 (Esc)</button>
+  </div>
+  <div class="mbody" id="mBody"><canvas id="mCanvas"></canvas></div>
+</div>
+
+<script>
+(function () {
+  var files = [];            // {file,name,size,pages}
+  var pages = [];            // {n (1-based in merged), src, deleted, sel, card}
+  var mergedBytes = null;
+  var pdfDoc = null;
+  var mergeToken = 0, docToken = 0, timer = null;
+  var cur = 0;               // modal page index
+
+  var $ = function (id) { return document.getElementById(id); };
+  var drop = $('drop'), input = $('file'), list = $('list');
+  var statusEl = $('status'), prog = $('prog'), grid = $('grid');
+  var dlBtn = $('dl'), remergeBtn = $('remerge'), clearBtn = $('clear');
+  var selAllBtn = $('selAll'), selNoneBtn = $('selNone'), delSelBtn = $('delSel'), restoreBtn = $('restore');
+
+  function fmtSize(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+  function setStatus(m, c) { statusEl.textContent = m; statusEl.className = c || ''; }
+
+  /* ---------- PDF.js worker (works even when opened from file://) ---------- */
+  var workerReady = null;
+  function initWorker() {
+    if (workerReady) return workerReady;
+    var url = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    workerReady = fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([t], { type: 'text/javascript' }));
+    }).catch(function () { pdfjsLib.GlobalWorkerOptions.workerSrc = url; });
+    return workerReady;
+  }
+
+  /* ---------- file list ---------- */
+  function renderList() {
+    list.innerHTML = '';
+    if (!files.length) list.innerHTML = '<li class="empty">尚未匯入檔案</li>';
+    files.forEach(function (f, i) {
+      var li = document.createElement('li');
+      li.innerHTML = '<span class="n"></span><span class="name"></span><span class="meta"></span><span class="ops"></span>';
+      li.children[0].textContent = i + 1;
+      li.children[1].textContent = f.name; li.children[1].title = f.name;
+      li.children[2].textContent = fmtSize(f.size) + (f.pages ? ' · ' + f.pages + ' 頁' : '');
+      var ops = li.children[3];
+      [['↑', function () { moveFile(i, -1); }, i === 0],
+       ['↓', function () { moveFile(i, 1); }, i === files.length - 1],
+       ['移除', function () { files.splice(i, 1); changed(); }, false]
+      ].forEach(function (o) {
+        var b = document.createElement('button'); b.textContent = o[0]; b.onclick = o[1]; b.disabled = o[2]; ops.appendChild(b);
+      });
+      list.appendChild(li);
+    });
+    clearBtn.disabled = remergeBtn.disabled = !files.length;
+  }
+  function moveFile(i, d) {
+    var j = i + d; if (j < 0 || j >= files.length) return;
+    var t = files[i]; files[i] = files[j]; files[j] = t; changed();
+  }
+  function changed() {
+    renderList();
+    resetPreview();
+    clearTimeout(timer);
+    if (!files.length) { mergeToken++; setStatus(''); prog.style.display = 'none'; return; }
+    timer = setTimeout(merge, 400);
+  }
+  function addFiles(fl) {
+    var arr = Array.prototype.slice.call(fl).filter(function (f) { return /\.pdf$/i.test(f.name) || f.type === 'application/pdf'; });
+    if (!arr.length) { setStatus('沒有找到 PDF 檔案。', 'err'); return; }
+    if ($('sortName').checked) arr.sort(function (a, b) { return a.name.localeCompare(b.name, 'zh-Hant', { numeric: true }); });
+    arr.forEach(function (f) { files.push({ file: f, name: f.name, size: f.size, pages: 0 }); });
+    changed();
+  }
+
+  /* ---------- merge ---------- */
+  async function merge() {
+    if (!window.PDFLib) { setStatus('尚未載入 pdf-lib,請確認網路連線後重新整理頁面。', 'err'); return; }
+    if (!files.length) return;
+    var my = ++mergeToken;
+    resetPreview();
+    prog.style.display = 'block'; prog.value = 0;
+    try {
+      var out = await PDFLib.PDFDocument.create();
+      var map = [];
+      for (var i = 0; i < files.length; i++) {
+        if (my !== mergeToken) return;
+        setStatus('合併中 (' + (i + 1) + '/' + files.length + '):' + files[i].name);
+        var buf = await files[i].file.arrayBuffer();
+        var src = await PDFLib.PDFDocument.load(buf, { ignoreEncryption: true });
+        var cp = await out.copyPages(src, src.getPageIndices());
+        cp.forEach(function (p) { out.addPage(p); map.push(i); });
+        files[i].pages = cp.length;
+        prog.value = Math.round((i + 1) / files.length * 85);
+        await new Promise(function (r) { setTimeout(r, 0); });
+      }
+      if (my !== mergeToken) return;
+      setStatus('正在產生預覽…');
+      mergedBytes = await out.save();
+      if (my !== mergeToken) return;
+      renderList();
+      pages = map.map(function (fi, k) { return { n: k + 1, src: fi, deleted: false, sel: false, card: null }; });
+      prog.value = 100;
+      await buildPreview();
+      setStatus('合併完成:共 ' + pages.length + ' 頁(' + fmtSize(mergedBytes.length) + ')。請在右側確認後按「確認並下載」。', 'ok');
+    } catch (e) {
+      console.error(e);
+      setStatus('合併失敗:' + (e && e.message ? e.message : e) + '(可能有檔案損毀或受密碼保護)', 'err');
+    }
+  }
+
+  /* ---------- preview ---------- */
+  function resetPreview() {
+    docToken++;
+    pages = []; mergedBytes = null;
+    if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} pdfDoc = null; }
+    grid.innerHTML = '<div class="placeholder">' + (files.length ? '合併中…' : '匯入 PDF 後,合併結果會顯示在這裡。<br>可勾選頁面按「刪除選取」,或按頁面右上角 × 單頁刪除;點縮圖可放大檢視。') + '</div>';
+    updateCount();
+  }
+
+  var renderQueue = [], rendering = false;
+  async function pump(tok) {
+    if (rendering) return; rendering = true;
+    while (renderQueue.length) {
+      var p = renderQueue.shift();
+      if (tok !== docToken) break;
+      if (p.rendered) continue;
+      try {
+        var page = await pdfDoc.getPage(p.n);
+        var v1 = page.getViewport({ scale: 1 });
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        var sc = (170 * dpr) / v1.width;
+        var vp = page.getViewport({ scale: sc });
+        var cv = document.createElement('canvas');
+        cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        if (tok !== docToken) break;
+        var th = p.card.querySelector('.thumb');
+        th.style.aspectRatio = 'auto';
+        th.insertBefore(cv, th.firstChild);
+        p.rendered = true;
+        page.cleanup();
+      } catch (e) { console.warn('thumb fail', p.n, e); }
+    }
+    rendering = false;
+  }
+
+  async function buildPreview() {
+    grid.innerHTML = '';
+    if (!window.pdfjsLib) {
+      grid.innerHTML = '<div class="placeholder">無法載入預覽元件(pdf.js),請確認網路連線。<br>仍可按「確認並下載」下載完整合併檔。</div>';
+      dlBtn.disabled = false; updateCount(); return;
+    }
+    await initWorker();
+    var tok = ++docToken;
+    pdfDoc = await pdfjsLib.getDocument({ data: mergedBytes.slice() }).promise;
+    if (tok !== docToken) return;
+    var io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (en) {
+        if (en.isIntersecting) { var p = en.target._p; if (!p.rendered) { renderQueue.push(p); pump(tok); } io.unobserve(en.target); }
+      });
+    }, { root: grid, rootMargin: '400px' });
+
+    var frag = document.createDocumentFragment();
+    pages.forEach(function (p) {
+      var c = document.createElement('div'); c.className = 'card'; c._p = p; p.card = c;
+      c.innerHTML = '<input type="checkbox" class="chk" title="選取"><button class="del" title="刪除此頁">×</button>' +
+        '<div class="thumb"><div class="tag">已刪除</div></div><div class="cap"></div><div class="lbl"></div>';
+      c.querySelector('.cap').innerHTML = '<b>第 ' + p.n + ' 頁</b> ';
+      c.querySelector('.cap').appendChild(document.createTextNode(files[p.src] ? files[p.src].name : ''));
+      c.querySelector('.cap').title = files[p.src] ? files[p.src].name : '';
+      c.querySelector('.chk').onchange = function (e) { p.sel = e.target.checked; c.classList.toggle('sel', p.sel); updateCount(); };
+      c.querySelector('.del').onclick = function (e) { e.stopPropagation(); setDeleted(p, !p.deleted); };
+      c.querySelector('.thumb').onclick = function () { openModal(p.n - 1); };
+      frag.appendChild(c); io.observe(c);
+    });
+    grid.appendChild(frag);
+    updateCount();
+  }
+
+  function setDeleted(p, v) {
+    p.deleted = v;
+    if (v) { p.sel = false; var ck = p.card.querySelector('.chk'); ck.checked = false; p.card.classList.remove('sel'); }
+    p.card.classList.toggle('gone', v);
+    p.card.querySelector('.del').textContent = v ? '↺' : '×';
+    p.card.querySelector('.del').title = v ? '復原此頁' : '刪除此頁';
+    updateCount();
+  }
+
+  function updateCount() {
+    var total = pages.length;
+    var gone = pages.filter(function (p) { return p.deleted; }).length;
+    var sel = pages.filter(function (p) { return p.sel; }).length;
+    $('count').textContent = total ? ('共 ' + total + ' 頁 · 保留 ' + (total - gone) + ' · 已刪除 ' + gone + (sel ? ' · 已選 ' + sel : '')) : '';
+    selAllBtn.disabled = !total || !pdfDoc;
+    selNoneBtn.disabled = !sel;
+    delSelBtn.disabled = !sel;
+    restoreBtn.disabled = !gone;
+    dlBtn.disabled = !total || (total - gone) === 0;
+    updateLabels();
+  }
+
+  /* ---------- page numbers ---------- */
+  function radio(name) { var r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : ''; }
+  function getCfg() {
+    return {
+      on: $('pnOn').checked,
+      first: $('pnFirst').checked,
+      from: Math.max(1, parseInt($('pnFrom').value, 10) || 1),
+      start: Math.max(1, parseInt($('pnStart').value, 10) || 1),
+      pos: radio('pnPos') || 'footer',
+      align: radio('pnAlign') || 'center',
+      style: radio('pnStyle') || 'zh',
+      size: Math.min(36, Math.max(6, parseInt($('pnSize').value, 10) || 10))
+    };
+  }
+  function toRoman(n) {
+    if (n < 1 || n > 3999) return String(n);
+    var m = [[1000,'m'],[900,'cm'],[500,'d'],[400,'cd'],[100,'c'],[90,'xc'],[50,'l'],[40,'xl'],[10,'x'],[9,'ix'],[5,'v'],[4,'iv'],[1,'i']], r = '';
+    m.forEach(function (e) { while (n >= e[0]) { r += e[1]; n -= e[0]; } });
+    return r;
+  }
+  function fmtLabel(n, t, style) {
+    if (style === 'plain') return String(n);
+    if (style === 'slash') return n + ' / ' + t;
+    if (style === 'roman') return toRoman(n);
+    return '第 ' + n + ' 頁，共 ' + t + ' 頁';
+  }
+  // 回傳長度 N 的陣列,空字串代表該頁不加頁碼
+  function pageLabels(N, c) {
+    var out = [], total = Math.max(1, c.start + (N - c.from));
+    for (var P = 1; P <= N; P++) {
+      if (P < c.from || (c.first && P === 1)) out.push('');
+      else out.push(fmtLabel(c.start + (P - c.from), total, c.style));
+    }
+    return out;
+  }
+  function updateLabels() {
+    var c = getCfg();
+    $('pnBody').classList.toggle('off', !c.on);
+    var kept = pages.filter(function (p) { return !p.deleted; });
+    var labels = c.on ? pageLabels(kept.length, c) : [];
+    var k = 0;
+    pages.forEach(function (p) {
+      if (!p.card) return;
+      var el = p.card.querySelector('.lbl'); if (!el) return;
+      if (p.deleted) { el.textContent = ''; return; }
+      var t = labels[k++] || '';
+      el.textContent = c.on ? (t ? '頁碼:' + t : '(無頁碼)') : '';
+    });
+  }
+  function labelImage(doc, text, size) {
+    var sc = 4, cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+    var font = (size * sc) + 'px "Microsoft JhengHei","PingFang TC","Noto Sans TC","Heiti TC",sans-serif';
+    ctx.font = font;
+    var w = ctx.measureText(text).width;
+    cv.width = Math.ceil(w) + 8; cv.height = Math.ceil(size * sc * 1.4);
+    ctx = cv.getContext('2d'); ctx.font = font; ctx.fillStyle = '#000'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(text, 4, size * sc * 1.05);
+    return new Promise(function (res, rej) {
+      cv.toBlob(function (b) {
+        if (!b) return rej(new Error('頁碼圖片產生失敗'));
+        b.arrayBuffer().then(function (buf) { return doc.embedPng(buf); }).then(function (img) {
+          res({ img: img, w: cv.width / sc, h: cv.height / sc, base: size * 1.05 });
+        }, rej);
+      }, 'image/png');
+    });
+  }
+  async function stampNumbers(doc, c) {
+    var font = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    var pgs = doc.getPages(), labels = pageLabels(pgs.length, c), margin = 28, side = 36;
+    for (var i = 0; i < pgs.length; i++) {
+      var text = labels[i]; if (!text) continue;
+      var page = pgs[i], sz = page.getSize(), W = sz.width, H = sz.height, tw, th, im = null;
+      if (c.style === 'zh') { im = await labelImage(doc, text, c.size); tw = im.w; th = im.h; }
+      else { tw = font.widthOfTextAtSize(text, c.size); th = c.size; }
+      var x = c.align === 'left' ? side : (c.align === 'right' ? W - side - tw : (W - tw) / 2);
+      if (im) {
+        var yi = c.pos === 'header' ? H - margin - th : margin - (th - im.base);
+        page.drawImage(im.img, { x: x, y: yi, width: im.w, height: im.h });
+      } else {
+        var y = c.pos === 'header' ? H - margin - c.size : margin;
+        page.drawText(text, { x: x, y: y, size: c.size, font: font, color: PDFLib.rgb(0, 0, 0) });
+      }
+    }
+  }
+
+  selAllBtn.onclick = function () { pages.forEach(function (p) { if (!p.deleted) { p.sel = true; p.card.querySelector('.chk').checked = true; p.card.classList.add('sel'); } }); updateCount(); };
+  selNoneBtn.onclick = function () { pages.forEach(function (p) { p.sel = false; p.card.querySelector('.chk').checked = false; p.card.classList.remove('sel'); }); updateCount(); };
+  delSelBtn.onclick = function () { pages.forEach(function (p) { if (p.sel) setDeleted(p, true); }); };
+  restoreBtn.onclick = function () { pages.forEach(function (p) { if (p.deleted) setDeleted(p, false); }); };
+
+  /* ---------- modal ---------- */
+  var modal = $('modal'), mCanvas = $('mCanvas'), mBody = $('mBody');
+  var mTok = 0;
+  async function showModalPage() {
+    var p = pages[cur]; if (!p) return;
+    var my = ++mTok;
+    $('mInfo').textContent = '第 ' + p.n + ' / ' + pages.length + ' 頁 · ' + (files[p.src] ? files[p.src].name : '');
+    $('mDel').textContent = p.deleted ? '復原此頁' : '刪除此頁';
+    mBody.classList.toggle('gone', p.deleted);
+    $('mPrev').disabled = cur === 0; $('mNext').disabled = cur === pages.length - 1;
+    var page = await pdfDoc.getPage(p.n);
+    var v1 = page.getViewport({ scale: 1 });
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.min(window.innerWidth - 40, 1000);
+    var vp = page.getViewport({ scale: (w * dpr) / v1.width });
+    var cv = document.createElement('canvas'); cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+    if (my !== mTok) return;
+    mCanvas.width = cv.width; mCanvas.height = cv.height;
+    mCanvas.getContext('2d').drawImage(cv, 0, 0);
+    mCanvas.style.width = (cv.width / dpr) + 'px';
+    mBody.scrollTop = 0;
+  }
+  function openModal(i) { cur = i; modal.classList.add('open'); showModalPage(); }
+  function closeModal() { modal.classList.remove('open'); mTok++; }
+  $('mClose').onclick = closeModal;
+  $('mPrev').onclick = function () { if (cur > 0) { cur--; showModalPage(); } };
+  $('mNext').onclick = function () { if (cur < pages.length - 1) { cur++; showModalPage(); } };
+  $('mDel').onclick = function () { var p = pages[cur]; setDeleted(p, !p.deleted); $('mDel').textContent = p.deleted ? '復原此頁' : '刪除此頁'; mBody.classList.toggle('gone', p.deleted); };
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', function (e) {
+    if (!modal.classList.contains('open')) return;
+    if (e.key === 'Escape') closeModal();
+    else if (e.key === 'ArrowLeft') $('mPrev').click();
+    else if (e.key === 'ArrowRight') $('mNext').click();
+  });
+
+  /* ---------- download ---------- */
+  async function download() {
+    if (!mergedBytes) return;
+    var keep = pages.filter(function (p) { return !p.deleted; }).map(function (p) { return p.n - 1; });
+    if (!keep.length) { setStatus('所有頁面都已刪除,沒有內容可下載。', 'err'); return; }
+    dlBtn.disabled = true;
+    try {
+      var bytes = mergedBytes, c = getCfg();
+      if (keep.length !== pages.length || c.on) {
+        setStatus('正在產生最終檔案…');
+        var doc = await PDFLib.PDFDocument.load(mergedBytes, { ignoreEncryption: true });
+        for (var i = pages.length - 1; i >= 0; i--) { if (pages[i].deleted) doc.removePage(i); }
+        if (c.on) await stampNumbers(doc, c);
+        bytes = await doc.save();
+      }
+      var name = ($('outName').value || '合併.pdf').trim();
+      if (!/\.pdf$/i.test(name)) name += '.pdf';
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+      setStatus('已下載:' + name + '(共 ' + keep.length + ' 頁,' + fmtSize(bytes.length) + ')。', 'ok');
+    } catch (e) {
+      console.error(e);
+      setStatus('下載失敗:' + (e && e.message ? e.message : e), 'err');
+    }
+    updateCount();
+  }
+
+  /* ---------- wiring ---------- */
+  drop.onclick = function () { input.click(); };
+  drop.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } };
+  input.onchange = function () { addFiles(input.files); input.value = ''; };
+  ['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { addFiles(e.dataTransfer.files); });
+  document.getElementById('pn').addEventListener('input', updateLabels);
+  document.getElementById('pn').addEventListener('change', updateLabels);
+  dlBtn.onclick = download;
+  remergeBtn.onclick = merge;
+  clearBtn.onclick = function () { files = []; changed(); };
+
+  if (!window.PDFLib) setStatus('尚未載入 pdf-lib,請確認網路連線後重新整理頁面。', 'err');
+})();
+</script>
+</body>
+</html>
